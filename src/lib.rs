@@ -153,13 +153,14 @@ fn get_jsx_props(props_node: Option<&ExprOrSpread>) -> Vec<JSXAttrOrSpread> {
                                 JSXAttr {
                                     span: DUMMY_SP,
                                     name: key.into(),
-                                    value: Some(
-                                        JSXExprContainer {
+                                    value: Some(match *value {
+                                        Expr::Lit(Lit::Str(str)) => Lit::Str(str).into(),
+                                        _ => JSXExprContainer {
                                             span: DUMMY_SP,
                                             expr: value.into(),
                                         }
                                         .into(),
-                                    ),
+                                    }),
                                 }
                                 .into()
                             })
@@ -261,7 +262,7 @@ mod tests {
             ..Default::default()
         }),
         |_| tr(),
-        with_attrs,
+        with_str_lit_attrs,
         r#"
         function App() {
             return React.createElement('div', { foo: 'bar' });
@@ -269,7 +270,26 @@ mod tests {
         "#,
         r#"
         function App() {
-            return <div foo={'bar'} />;
+            return <div foo='bar' />;
+        }
+        "#
+    );
+
+    test!(
+        Syntax::Es(EsConfig {
+            jsx: true,
+            ..Default::default()
+        }),
+        |_| tr(),
+        with_non_str_lit_attrs,
+        r#"
+        function App() {
+            return React.createElement('div', { foo: 0, bar: true });
+        }
+        "#,
+        r#"
+        function App() {
+            return <div foo={0} bar={true} />;
         }
         "#
     );
@@ -331,6 +351,8 @@ mod tests {
                 a,
                 ...props,
                 e: 'f',
+                g: 0,
+                h: true
             });
         }
         "#,
@@ -338,7 +360,7 @@ mod tests {
         function App() {
             const a = 'b'
             const props = { c: 'd' }
-            return <div a={a} {...props} e={'f'} />;
+            return <div a={a} {...props} e='f' g={0} h={true} />;
         }
         "#
     );
