@@ -133,15 +133,14 @@ fn get_jsx_props(props_node: Option<&ExprOrSpread>) -> Vec<JSXAttrOrSpread> {
                                     Some((ident.clone(), Box::new(Expr::Ident(ident.clone()))))
                                 }
                                 Prop::Method(MethodProp {
-                                    key: PropName::Str(key),
+                                    key: PropName::Ident(ident),
                                     function,
                                 }) => {
-                                    let ident = Ident::new(key.value.clone(), DUMMY_SP);
                                     Some((
                                         ident.clone(),
                                         Box::<Expr>::new(
                                             FnExpr {
-                                                ident: Some(ident),
+                                                ident: Some(ident.clone()),
                                                 function: function.clone(),
                                             }
                                             .into(),
