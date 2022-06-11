@@ -32,9 +32,14 @@ fn get_jsx_node(call_expr: &CallExpr) -> Option<Expr> {
         _ => None,
     }?)?;
     let props = get_jsx_props(props_node);
-
-    // TODO: Handle children
-    let children = vec![];
+    let children = child_nodes
+        .into_iter()
+        .filter_map(|child| match child {
+            ExprOrSpread { spread: None, expr } => Some(get_jsx_child(expr.as_ref())),
+            _ => None,
+        })
+        .flatten()
+        .collect::<Vec<_>>();
     let children_is_empty = children.is_empty();
 
     Some(
@@ -175,6 +180,47 @@ fn get_jsx_props(props_node: Option<&ExprOrSpread>) -> Vec<JSXAttrOrSpread> {
         }
         _ => Vec::new(),
     }
+}
+
+fn get_jsx_child(child: &Expr) -> Vec<JSXElementChild> {
+    match child {
+        Expr::Lit(Lit::Str(str)) => {
+            return vec![JSXText {
+                span: DUMMY_SP,
+                value: str.value.clone(),
+                raw: str.raw.clone().unwrap_or(str.value.clone()),
+            }
+            .into()];
+        }
+        Expr::Call(call_expr) => {
+            if is_react_createelement(call_expr) {
+                match get_jsx_node(call_expr) {
+                    Some(Expr::JSXElement(el)) => return vec![el.into()],
+                    Some(Expr::JSXFragment(fragment)) => return vec![fragment.into()],
+                    _ => (),
+                };
+            }
+        }
+        Expr::Array(expr) => {
+            return expr
+                .elems
+                .iter()
+                .filter_map(|expr| match expr {
+                    Some(ExprOrSpread {
+                        spread: None, expr, ..
+                    }) => Some(get_jsx_child(expr.as_ref())),
+                    _ => None,
+                })
+                .flatten()
+                .collect::<Vec<_>>();
+        }
+        _ => (),
+    }
+
+    vec![JSXElementChild::JSXExprContainer(JSXExprContainer {
+        span: DUMMY_SP,
+        expr: Box::new(child.clone()).into(),
+    })]
 }
 
 impl VisitMut for TransformVisitor {
@@ -360,5 +406,112 @@ mod tests {
             return <div a={a} {...props} e='f' g={0} h={true} />;
         }
         "#
+    );
+
+    test!(
+        Syntax::Es(EsConfig {
+            jsx: true,
+            ..Default::default()
+        }),
+        |_| tr(),
+        with_str_child,
+        "function App() {
+            return React.createElement('div', null, 'Hello, world!');
+        }",
+        "function App() {
+            return <div>Hello, world!</div>;
+        }"
+    );
+
+    test!(
+        Syntax::Es(EsConfig {
+            jsx: true,
+            ..Default::default()
+        }),
+        |_| tr(),
+        with_expr_child,
+        "function App() {
+            return React.createElement('div', null, 42);
+        }",
+        "function App() {
+            return <div>{42}</div>;
+        }"
+    );
+
+    test!(
+        Syntax::Es(EsConfig {
+            jsx: true,
+            ..Default::default()
+        }),
+        |_| tr(),
+        with_element_child,
+        "function App() {
+            return React.createElement(
+                'div',
+                null,
+                React.createElement('div')
+            );
+        }",
+        "function App() {
+            return <div><div /></div>;
+        }"
+    );
+
+    test!(
+        Syntax::Es(EsConfig {
+            jsx: true,
+            ..Default::default()
+        }),
+        |_| tr(),
+        with_children_mixed,
+        "function App() {
+            return React.createElement('div', null, [
+                'Hello, world!',
+                42,
+                React.createElement('div'),
+            ]);
+        }",
+        "function App() {
+            return <div>Hello, world!{42}<div /></div>;
+        }"
+    );
+
+    test!(
+        Syntax::Es(EsConfig {
+            jsx: true,
+            ..Default::default()
+        }),
+        |_| tr(),
+        full,
+        "function App() {
+            const props = { qux: 'quux' }
+
+            return React.createElement(
+                MyComponent,
+                {
+                    foo: 'bar',
+                    baz: 42,
+                    ...props,
+                },
+                [
+                    'Hello, world!',
+                    42,
+                    React.createElement(
+                        'div',
+                        { foo: 'bar' },
+                    ),
+                    React.createElement(
+                        AnotherComponent,
+                        { fn () { return null } },
+                        'duh',
+                    )
+                ]
+            );
+        }",
+        "function App() {
+            const props = { qux: 'quux' }
+
+            return <MyComponent foo={'bar'} baz={42} {...props}>Hello, world!{42}<div foo={'bar'} /><AnotherComponent fn={function fn() { return null }}>duh</AnotherComponent></MyComponent>;
+        }"
     );
 }
