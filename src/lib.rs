@@ -27,7 +27,10 @@ fn get_jsx_node(call_expr: &CallExpr) -> Option<Expr> {
     let props_node = args.next();
     let child_nodes = args.collect::<Vec<_>>();
 
-    let name = get_jsx_name(name_node)?;
+    let name = get_jsx_name(match name_node {
+        Some(ExprOrSpread { spread: None, expr }) => Some(expr.as_ref()),
+        _ => None,
+    }?)?;
     let props = get_jsx_props(props_node);
 
     // TODO: Handle children
@@ -57,19 +60,15 @@ fn get_jsx_node(call_expr: &CallExpr) -> Option<Expr> {
     )
 }
 
-fn get_jsx_name(name_node: Option<&ExprOrSpread>) -> Option<JSXElementName> {
+fn get_jsx_name(name_node: &Expr) -> Option<JSXElementName> {
     match name_node {
-        Some(ExprOrSpread { spread: None, expr }) => match expr.as_ref() {
-            Expr::Ident(ident) => Some(ident.clone().into()),
-            Expr::Lit(Lit::Str(lit)) => Some(Ident::new(lit.value.clone(), DUMMY_SP).into()),
-            Expr::Member(MemberExpr {
-                obj,
-                prop: MemberProp::Ident(prop),
-                ..
-            }) => get_jsx_name(Some(&ExprOrSpread {
-                spread: None,
-                expr: obj.clone(),
-            }))
+        Expr::Ident(ident) => Some(ident.clone().into()),
+        Expr::Lit(Lit::Str(lit)) => Some(Ident::new(lit.value.clone(), DUMMY_SP).into()),
+        Expr::Member(MemberExpr {
+            obj,
+            prop: MemberProp::Ident(prop),
+            ..
+        }) => get_jsx_name(&obj)
             .and_then(|par| match par {
                 JSXElementName::Ident(ident) => Some(ident.into()),
                 JSXElementName::JSXMemberExpr(member) => Some(Box::new(member).into()),
@@ -82,8 +81,6 @@ fn get_jsx_name(name_node: Option<&ExprOrSpread>) -> Option<JSXElementName> {
                 }
                 .into()
             }),
-            _ => None,
-        },
         _ => None,
     }
 }
