@@ -1,6 +1,4 @@
-# swc-plugin-transform-react-createelement-to-jsx
-
-**WIP**
+# swc-plugin-react-createelement-to-jsx
 
 Transforms React.createElement calls to JSX syntax.
 

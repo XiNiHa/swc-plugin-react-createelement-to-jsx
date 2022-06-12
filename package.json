@@ -1,5 +1,5 @@
 {
-    "name": "swc-plugin-transform-react-createelement-to-jsx",
+    "name": "swc-plugin-react-createelement-to-jsx",
     "version": "0.1.0",
     "description": "Transforms React.createElement calls to JSX syntax",
     "author": "XiNiHa <me@xiniha.dev>",
@@ -7,9 +7,9 @@
     "keywords": [
         "swc-plugin"
     ],
-    "main": "target/wasm32-wasi/release/swc-plugin-transform-react-createelement-to-jsx.wasm",
+    "main": "target/wasm32-wasi/release/swc_plugin_react_createelement-to-jsx.wasm",
     "scripts": {
-        "prepublishOnly": "cargo build --release"
+        "prepublishOnly": "cargo build --release --target wasm32-wasi"
     },
-    "files": []
+    "files": ["target/wasm32-wasi/release/swc_plugin_react_createelement_to_jsx.wasm"]
 }

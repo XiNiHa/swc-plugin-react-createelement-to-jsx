@@ -1180,7 +1180,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "swc-plugin-transform-react-createelement-to-jsx"
+name = "swc-plugin-react-createelement-to-jsx"
 version = "0.1.0"
 dependencies = [
  "serde",
