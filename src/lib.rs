@@ -1,6 +1,14 @@
-use swc_plugin::{ast::*, plugin_transform, syntax_pos::DUMMY_SP, TransformPluginProgramMetadata};
+use swc_common::Spanned;
+use swc_plugin::{
+    ast::*, errors::HANDLER, plugin_transform, syntax_pos::DUMMY_SP, TransformPluginProgramMetadata,
+};
 
 pub struct TransformVisitor;
+
+enum JSXElName {
+    Name(JSXElementName),
+    Fragment,
+}
 
 fn is_react_createelement(expr: &CallExpr) -> bool {
     match &expr.callee {
@@ -42,50 +50,88 @@ fn get_jsx_node(call_expr: &CallExpr) -> Option<Expr> {
         .collect::<Vec<_>>();
     let children_is_empty = children.is_empty();
 
-    Some(
-        Box::new(JSXElement {
-            span: DUMMY_SP,
-            opening: JSXOpeningElement {
-                name: name.clone(),
+    match name {
+        JSXElName::Name(name) => Some(
+            Box::new(JSXElement {
                 span: DUMMY_SP,
-                attrs: props,
-                self_closing: children_is_empty,
-                type_args: None,
-            },
-            children,
-            closing: match children_is_empty {
-                true => None,
-                false => Some(JSXClosingElement {
-                    name,
+                opening: JSXOpeningElement {
+                    name: name.clone(),
                     span: DUMMY_SP,
-                }),
-            },
-        })
-        .into(),
-    )
+                    attrs: props,
+                    self_closing: children_is_empty,
+                    type_args: None,
+                },
+                children,
+                closing: match children_is_empty {
+                    true => None,
+                    false => Some(JSXClosingElement {
+                        name,
+                        span: DUMMY_SP,
+                    }),
+                },
+            })
+            .into(),
+        ),
+        JSXElName::Fragment => match props.is_empty() {
+            true => Some(
+                JSXFragment {
+                    span: DUMMY_SP,
+                    opening: JSXOpeningFragment { span: DUMMY_SP },
+                    children,
+                    closing: JSXClosingFragment { span: DUMMY_SP },
+                }
+                .into(),
+            ),
+            false => {
+                if let Some(props) = props_node {
+                    HANDLER.with(|handler| {
+                        handler.struct_span_err(
+                            props.span(),
+                            "`React.createElement()` call with `React.Fragment` as the first parameter should not contain any props"
+                        ).emit();
+                    });
+                }
+                None
+            }
+        },
+    }
 }
 
-fn get_jsx_name(name_node: &Expr) -> Option<JSXElementName> {
+fn get_jsx_name(name_node: &Expr) -> Option<JSXElName> {
     match name_node {
-        Expr::Ident(ident) => Some(ident.clone().into()),
-        Expr::Lit(Lit::Str(lit)) => Some(Ident::new(lit.value.clone(), DUMMY_SP).into()),
+        Expr::Ident(ident) => Some(JSXElName::Name(ident.clone().into())),
+        Expr::Lit(Lit::Str(lit)) => Some(JSXElName::Name(
+            Ident::new(lit.value.clone(), DUMMY_SP).into(),
+        )),
         Expr::Member(MemberExpr {
             obj,
             prop: MemberProp::Ident(prop),
             ..
-        }) => get_jsx_name(&obj)
-            .and_then(|par| match par {
-                JSXElementName::Ident(ident) => Some(ident.into()),
-                JSXElementName::JSXMemberExpr(member) => Some(Box::new(member).into()),
-                JSXElementName::JSXNamespacedName(_) => None,
-            })
-            .map(|obj| {
-                JSXMemberExpr {
-                    obj,
-                    prop: prop.clone(),
+        }) => {
+            if let Expr::Ident(obj) = obj.as_ref() {
+                if obj.sym.to_string() == "React" && prop.sym.to_string() == "Fragment" {
+                    return Some(JSXElName::Fragment);
                 }
-                .into()
-            }),
+            }
+
+            get_jsx_name(&obj)
+                .and_then(|par| match par {
+                    JSXElName::Name(JSXElementName::Ident(ident)) => Some(ident.into()),
+                    JSXElName::Name(JSXElementName::JSXMemberExpr(member)) => {
+                        Some(Box::new(member).into())
+                    }
+                    _ => None,
+                })
+                .map(|obj| {
+                    JSXElName::Name(
+                        JSXMemberExpr {
+                            obj,
+                            prop: prop.clone(),
+                        }
+                        .into(),
+                    )
+                })
+        }
         _ => None,
     }
 }
@@ -135,19 +181,17 @@ fn get_jsx_props(props_node: Option<&ExprOrSpread>) -> Vec<JSXAttrOrSpread> {
                                 Prop::Method(MethodProp {
                                     key: PropName::Ident(ident),
                                     function,
-                                }) => {
-                                    Some((
-                                        ident.clone(),
-                                        Box::<Expr>::new(
-                                            FnExpr {
-                                                ident: Some(ident.clone()),
-                                                function: function.clone(),
-                                            }
-                                            .into(),
-                                        )
-                                        .clone(),
-                                    ))
-                                }
+                                }) => Some((
+                                    ident.clone(),
+                                    Box::<Expr>::new(
+                                        FnExpr {
+                                            ident: Some(ident.clone()),
+                                            function: function.clone(),
+                                        }
+                                        .into(),
+                                    )
+                                    .clone(),
+                                )),
                                 _ => None,
                             };
                             kv.map(|(key, value)| {
@@ -489,6 +533,31 @@ mod tests {
         r#"
         function App() {
             return <div>Hello, world!{42}<div /></div>;
+        }
+        "#
+    );
+
+    test!(
+        Syntax::Es(EsConfig {
+            jsx: true,
+            ..Default::default()
+        }),
+        |_| tr(),
+        fragment,
+        r#"
+        function App() {
+            return React.createElement(
+                React.Fragment,
+                null,
+                'Hello, world!',
+                42,
+                React.createElement('div'),
+            );
+        }
+        "#,
+        r#"
+        function App() {
+            return <>Hello, world!{42}<div /></>;
         }
         "#
     );
