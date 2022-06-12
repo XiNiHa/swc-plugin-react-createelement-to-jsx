@@ -414,12 +414,16 @@ mod tests {
         }),
         |_| tr(),
         with_str_child,
-        "function App() {
+        r#"
+        function App() {
             return React.createElement('div', null, 'Hello, world!');
-        }",
-        "function App() {
+        }
+        "#,
+        r#"
+        function App() {
             return <div>Hello, world!</div>;
-        }"
+        }
+        "#
     );
 
     test!(
@@ -429,12 +433,16 @@ mod tests {
         }),
         |_| tr(),
         with_expr_child,
-        "function App() {
+        r#"
+        function App() {
             return React.createElement('div', null, 42);
-        }",
-        "function App() {
+        }
+        "#,
+        r#"
+        function App() {
             return <div>{42}</div>;
-        }"
+        }
+        "#
     );
 
     test!(
@@ -444,16 +452,20 @@ mod tests {
         }),
         |_| tr(),
         with_element_child,
-        "function App() {
+        r#"
+        function App() {
             return React.createElement(
                 'div',
                 null,
                 React.createElement('div')
             );
-        }",
-        "function App() {
+        }
+        "#,
+        r#"
+        function App() {
             return <div><div /></div>;
-        }"
+        }
+        "#
     );
 
     test!(
@@ -463,16 +475,22 @@ mod tests {
         }),
         |_| tr(),
         with_children_mixed,
-        "function App() {
-            return React.createElement('div', null, [
+        r#"
+        function App() {
+            return React.createElement(
+                'div',
+                null,
                 'Hello, world!',
                 42,
                 React.createElement('div'),
-            ]);
-        }",
-        "function App() {
+            );
+        }
+        "#,
+        r#"
+        function App() {
             return <div>Hello, world!{42}<div /></div>;
-        }"
+        }
+        "#
     );
 
     test!(
@@ -482,7 +500,8 @@ mod tests {
         }),
         |_| tr(),
         full,
-        "function App() {
+        r#"
+        function App() {
             const props = { qux: 'quux' }
 
             return React.createElement(
@@ -492,25 +511,26 @@ mod tests {
                     baz: 42,
                     ...props,
                 },
-                [
-                    'Hello, world!',
-                    42,
-                    React.createElement(
-                        'div',
-                        { foo: 'bar' },
-                    ),
-                    React.createElement(
-                        AnotherComponent,
-                        { fn () { return null } },
-                        'duh',
-                    )
-                ]
+                'Hello, world!',
+                42,
+                React.createElement(
+                    'div',
+                    { foo: 'bar' },
+                ),
+                React.createElement(
+                    AnotherComponent,
+                    { fn () { return null } },
+                    'duh',
+                )
             );
-        }",
-        "function App() {
+        }
+        "#,
+        r#"
+        function App() {
             const props = { qux: 'quux' }
 
-            return <MyComponent foo={'bar'} baz={42} {...props}>Hello, world!{42}<div foo={'bar'} /><AnotherComponent fn={function fn() { return null }}>duh</AnotherComponent></MyComponent>;
-        }"
+            return <MyComponent foo='bar' baz={42} {...props}>Hello, world!{42}<div foo='bar' /><AnotherComponent fn={function fn() { return null }}>duh</AnotherComponent></MyComponent>;
+        }
+        "#
     );
 }
